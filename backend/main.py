@@ -46,6 +46,23 @@ def extract_url_text(url: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
+def chunk_text(text: str, chunk_size: int = 900, overlap: int = 150) -> list[str]:
+    if not text:
+        return []
+    if overlap >= chunk_size:
+        raise ValueError("overlap must be less than chunk_size")
+
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        if end >= len(text):
+            break
+        start = end - overlap
+    return chunks
+
+
 def extract_file_text(filename: str | None, data: bytes) -> str:
     if not filename:
         raise HTTPException(status_code=400, detail="Filename is required")
@@ -74,10 +91,22 @@ def health():
 async def ingest_file(file: UploadFile = File(...)):
     data = await file.read()
     text = extract_file_text(file.filename, data)
-    return {"text_length": len(text), "preview": text[:300]}
+    chunks = chunk_text(text)
+    return {
+        "text_length": len(text),
+        "preview": text[:300],
+        "chunk_count": len(chunks),
+        "chunks": chunks,
+    }
 
 
 @app.post("/ingest/url")
 def ingest_url(body: IngestUrlRequest):
     text = extract_url_text(body.url)
-    return {"text_length": len(text), "preview": text[:300]}
+    chunks = chunk_text(text)
+    return {
+        "text_length": len(text),
+        "preview": text[:300],
+        "chunk_count": len(chunks),
+        "chunks": chunks,
+    }
