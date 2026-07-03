@@ -1,3 +1,5 @@
+name: rag-poc
+
 services:
   ollama:
     image: ollama/ollama
