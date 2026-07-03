@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import re
 from pathlib import Path
@@ -9,6 +10,7 @@ from bs4 import BeautifulSoup
 from docx import Document
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pypdf import PdfReader
 
@@ -49,15 +51,16 @@ def get_embedding(text: str) -> list[float]:
     return embedding
 
 
-def call_ollama_chat(prompt: str) -> str:
+def stream_ollama_chat(prompt: str, sources: list[str]):
     try:
         response = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
             json={
                 "model": CHAT_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
+                "stream": True,
             },
+            stream=True,
             timeout=120,
         )
         response.raise_for_status()
@@ -66,10 +69,17 @@ def call_ollama_chat(prompt: str) -> str:
             status_code=502, detail=f"Failed to get chat response: {exc}"
         ) from exc
 
-    content = response.json().get("message", {}).get("content")
-    if not content:
-        raise HTTPException(status_code=502, detail="Ollama returned no chat response")
-    return content
+    for line in response.iter_lines():
+        if not line:
+            continue
+        chunk = json.loads(line)
+        token = chunk.get("message", {}).get("content", "")
+        if token:
+            yield json.dumps({"token": token}) + "\n"
+        if chunk.get("done"):
+            break
+
+    yield json.dumps({"done": True, "sources": sources}) + "\n"
 
 
 def store_chunks(source: str, chunks: list[str]) -> dict:
@@ -224,6 +234,8 @@ def chat(body: ChatRequest):
         f"Question: {body.query}"
     )
 
-    answer = call_ollama_chat(prompt)
     sources = sorted({m["source"] for m in metadatas})
-    return {"answer": answer, "sources": sources}
+    return StreamingResponse(
+        stream_ollama_chat(prompt, sources),
+        media_type="application/x-ndjson",
+    )

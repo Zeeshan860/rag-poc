@@ -176,14 +176,79 @@ export default function Home() {
         throw new Error(detail);
       }
 
-      const data = await response.json();
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.answer,
-        sources: data.sources,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const assistantId = crypto.randomUUID();
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantId, role: "assistant", content: "" },
+      ]);
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const parsed = JSON.parse(line) as {
+            token?: string;
+            done?: boolean;
+            sources?: string[];
+          };
+
+          if (parsed.token) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: m.content + parsed.token }
+                  : m,
+              ),
+            );
+          }
+
+          if (parsed.done) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, sources: parsed.sources }
+                  : m,
+              ),
+            );
+          }
+        }
+      }
+
+      if (buffer.trim()) {
+        const parsed = JSON.parse(buffer) as {
+          token?: string;
+          done?: boolean;
+          sources?: string[];
+        };
+        if (parsed.token) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: m.content + parsed.token }
+                : m,
+            ),
+          );
+        }
+        if (parsed.done) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, sources: parsed.sources } : m,
+            ),
+          );
+        }
+      }
     } catch (error) {
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -347,15 +412,6 @@ export default function Home() {
               </div>
             ))}
 
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="rounded-xl bg-zinc-100 px-4 py-2 dark:bg-zinc-800">
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    Thinking...
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="border-t border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950">
