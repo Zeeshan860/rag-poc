@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from pypdf import PdfReader
 
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "llama3.2:3b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
 
 chroma_client = chromadb.PersistentClient(path="/data/chroma")
@@ -37,6 +38,29 @@ def get_embedding(text: str) -> list[float]:
     if not embedding:
         raise HTTPException(status_code=502, detail="Ollama returned no embedding")
     return embedding
+
+
+def call_ollama_chat(prompt: str) -> str:
+    try:
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model": CHAT_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+            },
+            timeout=120,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Failed to get chat response: {exc}"
+        ) from exc
+
+    content = response.json().get("message", {}).get("content")
+    if not content:
+        raise HTTPException(status_code=502, detail="Ollama returned no chat response")
+    return content
 
 
 def store_chunks(source: str, chunks: list[str]) -> dict:
@@ -129,6 +153,11 @@ class IngestUrlRequest(BaseModel):
     url: str
 
 
+class ChatRequest(BaseModel):
+    query: str
+    top_k: int = 4
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -158,3 +187,34 @@ def list_documents():
     result = collection.get(include=["metadatas"])
     sources = sorted({m["source"] for m in result["metadatas"]})
     return {"sources": sources, "total_chunks": count}
+
+
+@app.post("/chat")
+def chat(body: ChatRequest):
+    if collection.count() == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No documents ingested. Upload a file or URL first.",
+        )
+
+    query_embedding = get_embedding(body.query)
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=body.top_k,
+        include=["documents", "metadatas"],
+    )
+
+    documents = results["documents"][0]
+    metadatas = results["metadatas"][0]
+    context = "\n\n".join(documents)
+
+    prompt = (
+        "You are a helpful assistant. Answer the question using ONLY the context below.\n"
+        "If the answer is not in the context, respond with exactly: I don't know\n\n"
+        f"Context:\n{context}\n\n"
+        f"Question: {body.query}"
+    )
+
+    answer = call_ollama_chat(prompt)
+    sources = sorted({m["source"] for m in metadatas})
+    return {"answer": answer, "sources": sources}
