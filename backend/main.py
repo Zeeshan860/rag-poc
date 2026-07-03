@@ -1,7 +1,9 @@
 import io
+import os
 import re
 from pathlib import Path
 
+import chromadb
 import requests
 from bs4 import BeautifulSoup
 from docx import Document
@@ -9,7 +11,52 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from pypdf import PdfReader
 
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+
+chroma_client = chromadb.PersistentClient(path="/data/chroma")
+collection = chroma_client.get_or_create_collection("rag_docs")
+
 app = FastAPI()
+
+
+def get_embedding(text: str) -> list[float]:
+    try:
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/embeddings",
+            json={"model": EMBED_MODEL, "prompt": text},
+            timeout=60,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Failed to get embedding: {exc}"
+        ) from exc
+
+    embedding = response.json().get("embedding")
+    if not embedding:
+        raise HTTPException(status_code=502, detail="Ollama returned no embedding")
+    return embedding
+
+
+def store_chunks(source: str, chunks: list[str]) -> dict:
+    if not chunks:
+        return {"source": source, "chunks_added": 0}
+
+    ids, embeddings, documents, metadatas = [], [], [], []
+    for i, chunk in enumerate(chunks):
+        ids.append(f"{source}::{i}")
+        embeddings.append(get_embedding(chunk))
+        documents.append(chunk)
+        metadatas.append({"source": source, "chunk_index": i})
+
+    collection.add(
+        ids=ids,
+        embeddings=embeddings,
+        documents=documents,
+        metadatas=metadatas,
+    )
+    return {"source": source, "chunks_added": len(chunks)}
 
 
 def extract_pdf(data: bytes) -> str:
@@ -92,21 +139,22 @@ async def ingest_file(file: UploadFile = File(...)):
     data = await file.read()
     text = extract_file_text(file.filename, data)
     chunks = chunk_text(text)
-    return {
-        "text_length": len(text),
-        "preview": text[:300],
-        "chunk_count": len(chunks),
-        "chunks": chunks,
-    }
+    return store_chunks(file.filename, chunks)
 
 
 @app.post("/ingest/url")
 def ingest_url(body: IngestUrlRequest):
     text = extract_url_text(body.url)
     chunks = chunk_text(text)
-    return {
-        "text_length": len(text),
-        "preview": text[:300],
-        "chunk_count": len(chunks),
-        "chunks": chunks,
-    }
+    return store_chunks(body.url, chunks)
+
+
+@app.get("/documents")
+def list_documents():
+    count = collection.count()
+    if count == 0:
+        return {"sources": [], "total_chunks": 0}
+
+    result = collection.get(include=["metadatas"])
+    sources = sorted({m["source"] for m in result["metadatas"]})
+    return {"sources": sources, "total_chunks": count}
