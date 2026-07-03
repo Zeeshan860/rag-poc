@@ -8,6 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 from docx import Document
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pypdf import PdfReader
 
@@ -19,6 +20,14 @@ chroma_client = chromadb.PersistentClient(path="/data/chroma")
 collection = chroma_client.get_or_create_collection("rag_docs")
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_embedding(text: str) -> list[float]:
