@@ -7,4 +7,5 @@ python-docx
 beautifulsoup4
 requests
 python-dotenv
+pydantic-settings
 debugpy
