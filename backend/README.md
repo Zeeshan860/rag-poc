@@ -10,6 +10,22 @@ Part of the [RAG POC](../README.md) monorepo. The frontend lives in `frontend/`.
 2. **Store** — Chunks and embeddings are persisted in a local ChromaDB collection (`rag_docs`).
 3. **Chat** — A user query is embedded, the top-k similar chunks are retrieved, and Ollama (`llama3.2:3b`) streams an answer constrained to that context.
 
+## Project structure
+
+```text
+backend/
+├── main.py              # entrypoint shim (uvicorn main:app)
+└── app/
+    ├── main.py          # FastAPI app factory + CORS + routers
+    ├── core/config.py   # Settings (pydantic-settings, loads .env)
+    ├── db/chroma.py     # ChromaDB client and collection
+    ├── schemas/         # Pydantic request models
+    ├── services/        # business logic (Ollama, extraction, chunking, vector store)
+    └── api/
+        ├── deps.py      # FastAPI dependency injection helpers
+        └── routes/      # API route handlers
+```
+
 ## Prerequisites
 
 - Python 3.11+
@@ -34,7 +50,7 @@ cp .env.example .env        # edit values as needed
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Configuration is loaded from `backend/.env` via [python-dotenv](https://github.com/theskumar/python-dotenv). Shell environment variables override `.env` values.
+Configuration is loaded from `backend/.env` and environment variables via [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) in `app/core/config.py`. Shell environment variables override `.env` values.
 
 - API: [http://localhost:8000](http://localhost:8000)
 - Interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -111,4 +127,4 @@ docker compose -f compose/docker-compose.yml up
 
 ## Dependencies
 
-See `requirements.txt`. Key libraries: FastAPI, ChromaDB, pypdf, python-docx, BeautifulSoup4, requests.
+See `requirements.txt`. Key libraries: FastAPI, pydantic-settings, ChromaDB, pypdf, python-docx, BeautifulSoup4, requests.
