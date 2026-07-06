@@ -7,6 +7,7 @@ from pathlib import Path
 import chromadb
 import requests
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from docx import Document
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,11 +15,20 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from pypdf import PdfReader
 
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "llama3.2:3b")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+_chroma_path = os.getenv("CHROMA_PATH", str(BASE_DIR / "data" / "chroma"))
+CHROMA_PATH = (
+    str(BASE_DIR / _chroma_path)
+    if not Path(_chroma_path).is_absolute()
+    else _chroma_path
+)
 
-chroma_client = chromadb.PersistentClient(path="/data/chroma")
+chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = chroma_client.get_or_create_collection("rag_docs")
 
 app = FastAPI()
