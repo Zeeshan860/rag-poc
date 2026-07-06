@@ -2,6 +2,7 @@ from chromadb import Collection
 from fastapi import HTTPException
 
 from app.core.config import Settings
+from app.services.chunking import TextChunk
 from app.services.ollama import get_embedding
 
 
@@ -9,17 +10,20 @@ def store_chunks(
     collection: Collection,
     settings: Settings,
     source: str,
-    chunks: list[str],
+    chunks: list[TextChunk],
 ) -> dict:
     if not chunks:
         return {"source": source, "chunks_added": 0}
 
     ids, embeddings, documents, metadatas = [], [], [], []
-    for i, chunk in enumerate(chunks):
-        ids.append(f"{source}::{i}")
-        embeddings.append(get_embedding(chunk, settings))
-        documents.append(chunk)
-        metadatas.append({"source": source, "chunk_index": i})
+    for chunk in chunks:
+        ids.append(f"{source}::{chunk.chunk_index}")
+        embeddings.append(get_embedding(chunk.text, settings))
+        documents.append(chunk.text)
+        metadata: dict = {"source": source, "chunk_index": chunk.chunk_index}
+        if chunk.page_number is not None:
+            metadata["page_number"] = chunk.page_number
+        metadatas.append(metadata)
 
     collection.add(
         ids=ids,

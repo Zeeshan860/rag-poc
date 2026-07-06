@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     chat_model: str = "llama3.2:3b"
     ollama_base_url: str = "http://localhost:11434"
     chroma_path: str = "data/chroma"
+    chunk_size: int = 900
+    chunk_overlap: int = 150
 
     @computed_field  # type: ignore[prop-decorator]
     @property

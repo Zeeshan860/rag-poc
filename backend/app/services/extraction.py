@@ -1,5 +1,6 @@
 import io
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -9,10 +10,23 @@ from fastapi import HTTPException
 from pypdf import PdfReader
 
 
-def extract_pdf(data: bytes) -> str:
+@dataclass
+class PageText:
+    page_number: int | None
+    text: str
+
+
+@dataclass
+class ExtractedDocument:
+    pages: list[PageText]
+
+
+def extract_pdf(data: bytes) -> list[PageText]:
     reader = PdfReader(io.BytesIO(data))
-    pages = [page.extract_text() or "" for page in reader.pages]
-    return "\n".join(pages)
+    return [
+        PageText(page_number=page_num, text=page.extract_text() or "")
+        for page_num, page in enumerate(reader.pages, start=1)
+    ]
 
 
 def extract_docx(data: bytes) -> str:
@@ -24,7 +38,7 @@ def extract_plain_text(data: bytes) -> str:
     return data.decode("utf-8")
 
 
-def extract_url_text(url: str) -> str:
+def _extract_url_text(url: str) -> str:
     try:
         response = requests.get(
             url,
@@ -43,16 +57,20 @@ def extract_url_text(url: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
-def extract_file_text(filename: str | None, data: bytes) -> str:
+def extract_file_document(filename: str | None, data: bytes) -> ExtractedDocument:
     if not filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
     extension = Path(filename).suffix.lower()
     if extension == ".pdf":
-        return extract_pdf(data)
+        return ExtractedDocument(pages=extract_pdf(data))
     if extension == ".docx":
-        return extract_docx(data)
+        return ExtractedDocument(pages=[PageText(page_number=None, text=extract_docx(data))])
     if extension in {".txt", ".md"}:
-        return extract_plain_text(data)
+        return ExtractedDocument(pages=[PageText(page_number=None, text=extract_plain_text(data))])
 
     raise HTTPException(status_code=400, detail="Unsupported file type")
+
+
+def extract_url_document(url: str) -> ExtractedDocument:
+    return ExtractedDocument(pages=[PageText(page_number=None, text=_extract_url_text(url))])
