@@ -1,6 +1,14 @@
 # RAG POC Backend
 
-FastAPI service that ingests documents (PDF, DOCX, TXT, MD, or URLs), stores embeddings in ChromaDB, and answers questions via Ollama.
+FastAPI service that ingests documents (PDF, DOCX, TXT, MD, or URLs), chunks and embeds them with Ollama, stores vectors in ChromaDB, and answers questions via streaming chat.
+
+Part of the [RAG POC](../README.md) monorepo. The frontend lives in `frontend/`.
+
+## How it works
+
+1. **Ingest** — Files and URLs are parsed to plain text, split into overlapping chunks (~900 chars, 150 overlap), and embedded via Ollama (`nomic-embed-text`).
+2. **Store** — Chunks and embeddings are persisted in a local ChromaDB collection (`rag_docs`).
+3. **Chat** — A user query is embedded, the top-k similar chunks are retrieved, and Ollama (`llama3.2:3b`) streams an answer constrained to that context.
 
 ## Prerequisites
 
@@ -28,9 +36,10 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
 Configuration is loaded from `backend/.env` via [python-dotenv](https://github.com/theskumar/python-dotenv). Shell environment variables override `.env` values.
 
-The API is available at [http://localhost:8000](http://localhost:8000).
+- API: [http://localhost:8000](http://localhost:8000)
+- Interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-Interactive docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+CORS is enabled for `http://localhost:3000` (the frontend dev server).
 
 ## Start Ollama with Docker
 
@@ -49,14 +58,15 @@ This starts Ollama on port `11434` and pulls the default models. Keep it running
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
 | `EMBED_MODEL` | `nomic-embed-text` | Model used for embeddings |
 | `CHAT_MODEL` | `llama3.2:3b` | Model used for chat responses |
-| `CHROMA_PATH` | `backend/data/chroma` | Directory for ChromaDB persistence |
+| `CHROMA_PATH` | `./data/chroma` | Directory for ChromaDB persistence (relative to `backend/`) |
 
-Copy `.env.example` to `.env` and edit as needed, or set variables in your shell:
+Copy `.env.example` to `.env` and edit as needed:
 
 ```bash
-export OLLAMA_BASE_URL=http://localhost:11434
-export EMBED_MODEL=nomic-embed-text
-export CHAT_MODEL=llama3.2:3b
+OLLAMA_BASE_URL=http://localhost:11434
+EMBED_MODEL=nomic-embed-text
+CHAT_MODEL=llama3.2:3b
+CHROMA_PATH=./data/chroma
 ```
 
 ## API endpoints
@@ -64,10 +74,20 @@ export CHAT_MODEL=llama3.2:3b
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
-| `POST` | `/ingest/file` | Upload a file (PDF, DOCX, TXT, MD) |
-| `POST` | `/ingest/url` | Ingest content from a URL |
-| `GET` | `/documents` | List ingested sources and chunk count |
-| `POST` | `/chat` | Ask a question (streaming NDJSON response) |
+| `POST` | `/ingest/file` | Upload a file (PDF, DOCX, TXT, MD) — multipart form field `file` |
+| `POST` | `/ingest/url` | Ingest content from a URL — JSON body `{ "url": "..." }` |
+| `GET` | `/documents` | List ingested sources and total chunk count |
+| `POST` | `/chat` | Ask a question — JSON body `{ "query": "...", "top_k": 4 }`, returns streaming NDJSON |
+
+### Chat response format
+
+The `/chat` endpoint streams newline-delimited JSON:
+
+```json
+{"token": "Hello"}
+{"token": " world"}
+{"done": true, "sources": ["doc.pdf", "https://example.com"]}
+```
 
 ## Debug in VS Code / Cursor
 
@@ -81,4 +101,14 @@ From the repo root:
 docker compose -f compose/docker-compose.yml up backend
 ```
 
-This builds the backend image and connects it to the Ollama service defined in the same compose file.
+This builds the backend image and connects it to the Ollama service defined in the same compose file. ChromaDB data is stored in a Docker volume (`chroma_data`).
+
+To run the full stack (Ollama + backend + frontend):
+
+```bash
+docker compose -f compose/docker-compose.yml up
+```
+
+## Dependencies
+
+See `requirements.txt`. Key libraries: FastAPI, ChromaDB, pypdf, python-docx, BeautifulSoup4, requests.

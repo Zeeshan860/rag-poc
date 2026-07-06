@@ -1,36 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RAG POC Frontend
 
-## Getting Started
+Next.js chat UI for the [RAG POC](../README.md). Upload documents, ingest URLs, view indexed sources, and ask questions with streaming answers from the FastAPI backend.
 
-First, run the development server:
+## Features
+
+- **File upload** — PDF, DOCX, TXT, and Markdown
+- **URL ingest** — Scrape and index web page content
+- **Document list** — Shows ingested sources and total chunk count
+- **Streaming chat** — Token-by-token responses with source citations
+
+## Prerequisites
+
+- Node.js 20+
+- Backend running at `http://localhost:8000` (see [backend README](../backend/README.md))
+
+## Run locally
+
+From the `frontend` directory:
 
 ```bash
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The dev server hot-reloads when you edit files under `app/`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment variables
 
-## Learn More
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Base URL of the FastAPI backend |
 
-To learn more about Next.js, take a look at the following resources:
+Copy `.env.example` to `.env.local` for local development:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`NEXT_PUBLIC_*` variables are inlined at build time. Restart the dev server after changing them.
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server on port 3000 |
+| `npm run build` | Production build |
+| `npm run start` | Serve production build |
+| `npm run lint` | Run ESLint |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Project layout
+
+```
+frontend/
+├── app/
+│   ├── layout.tsx    # Root layout and fonts
+│   └── page.tsx      # Main chat and ingest UI
+├── public/           # Static assets
+├── Dockerfile        # Multi-stage production image
+└── .env.example      # Environment template
+```
+
+The main UI logic lives in `app/page.tsx`. It calls these backend endpoints:
+
+- `GET /documents` — Load indexed sources on mount
+- `POST /ingest/file` — Upload a file
+- `POST /ingest/url` — Ingest a URL
+- `POST /chat` — Stream a chat response (NDJSON)
+
+## Run with Docker
+
+From the repo root:
+
+```bash
+docker compose -f compose/docker-compose.yml up frontend
+```
+
+Or start the full stack:
+
+```bash
+docker compose -f compose/docker-compose.yml up
+```
+
+The compose file passes `NEXT_PUBLIC_API_URL=http://localhost:8000` as a build arg so the browser can reach the backend on the host.
+
+## Tech stack
+
+- [Next.js 16](https://nextjs.org/) (App Router)
+- [React 19](https://react.dev/)
+- [Tailwind CSS 4](https://tailwindcss.com/)
+- TypeScript
